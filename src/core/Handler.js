@@ -1,21 +1,57 @@
 // src/core/Handler.js
+
+import Context from "./Context.js";
+
 export default class Handler {
-  constructor(core, options = {}) {
+
+  constructor(core) {
     this.core = core;
-    this.prefix = options.prefix || core?.getConfig?.()?.prefix || ".";
-    this.plugins = options.plugins || new Map();
+    this.prefix = core.getConfig().prefix;
   }
 
-  setPlugins(pluginMap) {
-    this.plugins = pluginMap instanceof Map ? pluginMap : new Map();
+
+  async handle(message) {
+
+    if (!message) return;
+
+    if (message.key?.fromMe) return;
+
+
+    const client = this.core.getClient();
+
+    if (!client) return;
+
+
+    const parsed = await this.parse(message);
+
+
+    if (!parsed) return;
+
+
+    const ctx = new Context(
+      this.core,
+      client,
+      message,
+      parsed
+    );
+
+
+    if (!ctx.isCommand) return;
+
+
+    await this.core.commands.execute(ctx);
+
   }
 
-  getClient() {
-    return this.core?.getClient?.();
-  }
 
-  parseMessage(message) {
-    const msg = message?.message || {};
+
+  async parse(message) {
+
+    const msg = message.message;
+
+    if (!msg) return null;
+
+
     const text =
       msg.conversation ||
       msg.extendedTextMessage?.text ||
@@ -23,107 +59,267 @@ export default class Handler {
       msg.videoMessage?.caption ||
       "";
 
+
     const body = text.trim();
-    const isCommand = body.startsWith(this.prefix);
-    const withoutPrefix = isCommand ? body.slice(this.prefix.length).trim() : body;
-    const [commandRaw, ...args] = withoutPrefix.split(/\s+/);
-    const command = (commandRaw || "").toLowerCase();
+
+
+    const isCommand =
+      body.startsWith(this.prefix);
+
+
+
+    let command = "";
+
+    let args = [];
+
+
+    if (isCommand) {
+
+      const content =
+        body.slice(this.prefix.length).trim();
+
+
+      const split =
+        content.split(/\s+/);
+
+
+      command =
+        split.shift()?.toLowerCase() || "";
+
+
+      args = split;
+
+    }
+
+
+
+    const chat =
+      message.key.remoteJid;
+
+
+    const sender =
+      message.key.participant ||
+      message.key.remoteJid;
+
+
+
+    const isGroup =
+      chat.endsWith("@g.us");
+
+
 
     return {
-      body,
+
       text,
-      isCommand,
+
+      body,
+
       command,
+
       args,
-      sender: message?.key?.participant || message?.key?.remoteJid || "",
-      chat: message?.key?.remoteJid || "",
-      fromMe: !!message?.key?.fromMe,
-      isGroup: (message?.key?.remoteJid || "").endsWith("@g.us"),
+
+      isCommand,
+
+      chat,
+
+      sender,
+
+      isGroup,
+
+      fromMe:
+        message.key.fromMe,
+
+
       quoted:
-        msg.extendedTextMessage?.contextInfo?.quotedMessage ||
-        msg.imageMessage?.contextInfo?.quotedMessage ||
-        msg.videoMessage?.contextInfo?.quotedMessage ||
-        null,
-      raw: message,
-    };
-  }
+        this.getQuoted(msg),
 
-  async handle(message) {
-    const client = this.getClient();
-    if (!client) return;
 
-    if (!message || message.key?.fromMe) return;
+      raw:
+        message
 
-    const parsed = this.parseMessage(message);
-    if (!parsed.text) return;
-
-    const ctx = this.createContext(client, parsed);
-
-    if (!parsed.isCommand) return;
-
-    const plugin = this.findPlugin(parsed.command);
-
-    if (plugin?.execute && typeof plugin.execute === "function") {
-      try {
-        await plugin.execute(ctx);
-      } catch (error) {
-        console.error(`❌ Plugin error in "${parsed.command}":`, error);
-        await ctx.reply("Terjadi error saat menjalankan command.");
-      }
-      return;
-    }
-
-    if (parsed.command === "ping") {
-      await ctx.reply("Pong! 🚀");
-      return;
-    }
-
-    await ctx.reply(`Command "${parsed.command}" belum tersedia.`);
-  }
-
-  findPlugin(command) {
-    if (!command) return null;
-
-    for (const plugin of this.plugins.values()) {
-      const names = [
-        plugin?.name,
-        ...(Array.isArray(plugin?.aliases) ? plugin.aliases : []),
-      ]
-        .filter(Boolean)
-        .map((name) => String(name).toLowerCase());
-
-      if (names.includes(command)) {
-        return plugin;
-      }
-    }
-
-    return null;
-  }
-
-  createContext(client, parsed) {
-    const reply = async (text, options = {}) => {
-      return client.sendMessage(parsed.chat, { text, ...options });
     };
 
-    const send = async (content, options = {}) => {
-      return client.sendMessage(parsed.chat, { ...content, ...options });
-    };
+  }
+    getQuoted(message) {
+
+    return (
+      message.extendedTextMessage
+        ?.contextInfo
+        ?.quotedMessage ||
+      message.imageMessage
+        ?.contextInfo
+        ?.quotedMessage ||
+      message.videoMessage
+        ?.contextInfo
+        ?.quotedMessage ||
+      null
+    );
+
+  }
+
+
+
+  async checkOwner(sender) {
+
+    const owner =
+      this.core.getConfig().owner;
+
+
+    if (!owner) return false;
+
+
+    const cleanSender =
+      sender.replace(/\D/g, "");
+
+
+    const cleanOwner =
+      owner.replace(/\D/g, "");
+
+
+    return cleanSender.includes(cleanOwner);
+
+  }
+
+
+
+
+  async checkAdmin(client, chat, sender) {
+
+    try {
+
+      const metadata =
+        await client.groupMetadata(chat);
+
+
+      const participant =
+        metadata.participants.find(
+          p => p.id === sender
+        );
+
+
+      return (
+        participant?.admin === "admin" ||
+        participant?.admin === "superadmin"
+      );
+
+
+    } catch {
+
+      return false;
+
+    }
+
+  }
+
+
+
+
+  async checkBotAdmin(client, chat) {
+
+    try {
+
+      const metadata =
+        await client.groupMetadata(chat);
+
+
+      const bot =
+        client.user.id.split(":")[0] +
+        "@s.whatsapp.net";
+
+
+      const participant =
+        metadata.participants.find(
+          p => p.id === bot
+        );
+
+
+      return (
+        participant?.admin === "admin" ||
+        participant?.admin === "superadmin"
+      );
+
+
+    } catch {
+
+      return false;
+
+    }
+
+  }
+
+
+
+
+  detectMedia(message) {
+
+    const msg =
+      message.message;
+
+
+    if (!msg)
+      return {
+        type: null,
+        hasMedia: false
+      };
+
+
+    if (msg.imageMessage) {
+
+      return {
+        type: "image",
+        hasMedia: true
+      };
+
+    }
+
+
+    if (msg.videoMessage) {
+
+      return {
+        type: "video",
+        hasMedia: true
+      };
+
+    }
+
+
+    if (msg.audioMessage) {
+
+      return {
+        type: "audio",
+        hasMedia: true
+      };
+
+    }
+
+
+    if (msg.documentMessage) {
+
+      return {
+        type: "document",
+        hasMedia: true
+      };
+
+    }
+
+
+    if (msg.stickerMessage) {
+
+      return {
+        type: "sticker",
+        hasMedia: true
+      };
+
+    }
+
 
     return {
-      bot: this.core,
-      client,
-      prefix: this.prefix,
-      command: parsed.command,
-      args: parsed.args,
-      text: parsed.text,
-      body: parsed.body,
-      sender: parsed.sender,
-      chat: parsed.chat,
-      isGroup: parsed.isGroup,
-      quoted: parsed.quoted,
-      raw: parsed.raw,
-      reply,
-      send,
+      type: null,
+      hasMedia: false
     };
+
   }
-          }
+
+
+
+}
