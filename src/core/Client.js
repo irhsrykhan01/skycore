@@ -1,50 +1,101 @@
 // src/core/Client.js
+
 import fs from "node:fs";
 import path from "node:path";
-import dotenv from "dotenv";
+
 import pino from "pino";
+
 import makeWASocket, {
-  fetchLatestBaileysVersion,
-  useMultiFileAuthState,
+    fetchLatestBaileysVersion,
+    useMultiFileAuthState,
+    DisconnectReason
 } from "@whiskeysockets/baileys";
 
-dotenv.config();
+export async function createClient(core) {
 
-function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-}
+    const config = core.getConfig();
 
-export async function createClient(options = {}) {
-  const sessionDir = path.resolve(
-    options.sessionDir || process.env.SESSION_DIR || "./session"
-  );
+    const sessionDir = path.resolve(config.sessionDir);
 
-  ensureDir(sessionDir);
+    if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir, { recursive: true });
+    }
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-  const { version } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } =
+        await useMultiFileAuthState(sessionDir);
 
-  const logger = pino({
-    level: options.logLevel || process.env.LOG_LEVEL || "silent",
-  });
+    const { version } =
+        await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    logger,
-    printQRInTerminal: options.printQRInTerminal ?? true,
-    browser: options.browser || ["StarCore", "Chrome", "1.0.0"],
-    markOnlineOnConnect: options.markOnlineOnConnect ?? false,
-    syncFullHistory: options.syncFullHistory ?? false,
-    generateHighQualityLinkPreview:
-      options.generateHighQualityLinkPreview ?? false,
-  });
+    const sock = makeWASocket({
 
-  sock.ev.on("creds.update", saveCreds);
+        version,
 
-  return sock;
+        auth: state,
+
+        logger: pino({
+            level: "silent"
+        }),
+
+        browser: [
+            config.botName,
+            "Chrome",
+            "1.0.0"
+        ],
+
+        markOnlineOnConnect: false
+
+    });
+
+    sock.ev.on("creds.update", saveCreds);
+
+    sock.ev.on("connection.update", async (update) => {
+
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            core.logger.info("Scan QR untuk login.");
+        }
+
+        if (connection === "open") {
+
+            core.logger.success("WhatsApp Connected.");
+
+        }
+
+        if (connection === "close") {
+
+            const code =
+                lastDisconnect?.error?.output?.statusCode;
+
+            if (code !== DisconnectReason.loggedOut) {
+
+                core.logger.warn("Reconnect...");
+
+                return createClient(core);
+
+            }
+
+            core.logger.error("Session Logged Out.");
+
+        }
+
+    });
+
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+
+        if (type !== "notify") return;
+
+        const msg = messages?.[0];
+
+        if (!msg) return;
+
+        await core.handler.handle(msg);
+
+    });
+
+    return sock;
+
 }
 
 export default createClient;
