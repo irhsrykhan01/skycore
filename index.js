@@ -1,6 +1,13 @@
-import { startClient } from "./src/core/client.js";
+import StarCore from "./src/core/StarCore.js";
 
-startClient().catch((err) => {
-  console.error("❌ Failed to start StarCore:", err);
-  process.exit(1);
-});
+async function main() {
+  try {
+    const bot = new StarCore();
+    await bot.start();
+  } catch (error) {
+    console.error("❌ StarCore failed to start:", error);
+    process.exit(1);
+  }
+}
+
+main();
