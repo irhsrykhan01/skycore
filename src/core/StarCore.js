@@ -1,41 +1,66 @@
 // src/core/StarCore.js
+
 import { EventEmitter } from "node:events";
 import dotenv from "dotenv";
+
+import Logger from "./Logger.js";
+import Database from "./Database.js";
+import PluginManager from "./PluginManager.js";
+import Commands from "./Commands.js";
+import Handler from "./Handler.js";
 import { createClient } from "./Client.js";
 
 dotenv.config();
-
-const DEFAULTS = {
-  botName: process.env.BOT_NAME || "StarCore",
-  prefix: process.env.PREFIX || ".",
-  owner: process.env.OWNER || "",
-  sessionDir: process.env.SESSION_DIR || "./session",
-  logLevel: process.env.LOG_LEVEL || "silent",
-};
 
 export default class StarCore extends EventEmitter {
   constructor(options = {}) {
     super();
 
     this.options = {
-      ...DEFAULTS,
-      ...options,
+      botName: process.env.BOT_NAME || "StarCore",
+      prefix: process.env.PREFIX || ".",
+      owner: process.env.OWNER || "",
+      sessionDir: process.env.SESSION_DIR || "./session",
+      pluginDir: "./src/plugins",
+      databaseDir: "./database",
+      ...options
     };
 
+    this.logger = new Logger();
+
+    this.database = new Database(
+      this.options.databaseDir
+    );
+
+    this.pluginManager = new PluginManager(
+      this.options.pluginDir
+    );
+
+    this.commands = new Commands(this);
+
+    this.handler = new Handler(this);
+
     this.client = null;
+
     this.started = false;
   }
 
   async start() {
     if (this.started) return this;
 
-    this.emit("boot", this.options);
+    this.logger.info("Starting StarCore...");
+
+    await this.database.init();
+
+    await this.pluginManager.load();
 
     this.client = await createClient(this.options);
-    this.#bindClientEvents();
 
     this.started = true;
-    this.emit("ready", this.client);
+
+    this.logger.success("StarCore initialized.");
+
+    this.emit("ready");
 
     return this;
   }
@@ -47,13 +72,18 @@ export default class StarCore extends EventEmitter {
       if (typeof this.client.logout === "function") {
         await this.client.logout();
       }
+
+      await this.database.saveAll();
+
+      this.logger.info("Database saved.");
+
     } catch (error) {
-      this.emit("error", error);
-    } finally {
-      this.client = null;
-      this.started = false;
-      this.emit("stopped");
+      this.logger.error(error);
     }
+
+    this.started = false;
+
+    this.emit("stopped");
   }
 
   getClient() {
@@ -61,22 +91,6 @@ export default class StarCore extends EventEmitter {
   }
 
   getConfig() {
-    return { ...this.options };
-  }
-
-  #bindClientEvents() {
-    if (!this.client?.ev) return;
-
-    this.client.ev.on("connection.update", (update) => {
-      this.emit("connection.update", update);
-    });
-
-    this.client.ev.on("messages.upsert", (payload) => {
-      this.emit("messages.upsert", payload);
-    });
-
-    this.client.ev.on("creds.update", () => {
-      this.emit("creds.update");
-    });
+    return this.options;
   }
 }
