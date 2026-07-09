@@ -1,1 +1,51 @@
-
+{
+  "name": "@skyverse/starcore",
+  "version": "0.1.0-beta.1",
+  "description": "StarCore is a lightweight modular WhatsApp bot framework built on Baileys for SkyVerse.",
+  "main": "index.js",
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "start": "NODE_ENV=production node --expose-gc --max-old-space-size=256 index.js",
+    "dev": "NODE_ENV=development nodemon index.js",
+    "test": "node -e \"console.log('StarCore is ready!')\"",
+    "clean": "node -e \"console.log('clean later')\""
+  },
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "keywords": [
+    "whatsapp",
+    "whatsapp-bot",
+    "baileys",
+    "framework",
+    "plugin-system",
+    "skyverse",
+    "starcore",
+    "automation",
+    "multi-device"
+  ],
+  "author": "SkyVerse Team",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/starcore.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/starcore/issues"
+  },
+  "homepage": "https://github.com/your-username/starcore",
+  "packageManager": "npm@10.8.2",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "pino": "^9.7.0",
+    "qrcode-terminal": "^0.12.0",
+    "fs-extra": "^11.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "eslint": "^9.30.1",
+    "prettier": "^3.6.2"
+  }
+}
