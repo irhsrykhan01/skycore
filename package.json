@@ -47,7 +47,7 @@
   "packageManager": "npm@10.8.2",
 
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0",
+    "@whiskeysockets/baileys": "latest",
     "dotenv": "^16.4.7",
     "fs-extra": "^11.3.0",
     "pino": "^9.7.0",
